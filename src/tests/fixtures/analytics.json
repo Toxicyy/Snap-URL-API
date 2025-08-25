@@ -1,0 +1,14 @@
+{
+  "clickEvents": [
+    {
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      "referer": "https://google.com",
+      "country": "US",
+      "device": "desktop"
+    }
+  ],
+  "userAgents": [
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X)",
+    "Mozilla/5.0 (Android 11; Mobile; rv:68.0)"
+  ]
+}

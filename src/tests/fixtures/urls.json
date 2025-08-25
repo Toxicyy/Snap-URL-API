@@ -1,0 +1,20 @@
+{
+  "validUrls": [
+    {
+      "originalUrl": "https://github.com/example/repo",
+      "title": "GitHub Repository",
+      "description": "Example repository"
+    },
+    {
+      "originalUrl": "https://docs.example.com/api",
+      "title": "API Documentation",
+      "customAlias": "api-docs"
+    }
+  ],
+  "invalidUrls": [
+    {
+      "originalUrl": "not-a-url",
+      "title": "Invalid URL"
+    }
+  ]
+}
