@@ -126,10 +126,14 @@ src/
 ├── routes/         # API route definitions
 ├── services/       # Business logic
 ├── docs/           # Swagger documentation
+├── utils/          # Utility functions and helpers
 └── tests/          # Test suites
-    ├── unit/       # Unit tests
-    ├── integration/# Integration tests
-    └── e2e/        # End-to-end tests
+   ├── unit/       # Unit tests
+   ├── integration/# Integration tests
+   ├── utils/      # Test utility functions
+   ├── helpers/    # Test helper functions and setup
+   ├── fixtures/   # Test data and mock objects
+   └── e2e/        # End-to-end tests
 ```
 
 ### Contributing
