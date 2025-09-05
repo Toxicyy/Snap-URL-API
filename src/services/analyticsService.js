@@ -9,6 +9,27 @@ import User from "../models/User.js";
 
 class AnalyticsService {
   /**
+   * Normalize IP address to IPv4 format
+   * @param {string} ip - Raw IP address
+   * @returns {string} Normalized IPv4 address
+   */
+  _normalizeIpAddress(ip) {
+    if (!ip) return "127.0.0.1";
+
+    // Handle IPv4-mapped IPv6 addresses (::ffff:127.0.0.1 -> 127.0.0.1)
+    if (ip.startsWith("::ffff:")) {
+      return ip.substring(7);
+    }
+
+    // Handle IPv6 loopback (::1 -> 127.0.0.1)
+    if (ip === "::1") {
+      return "127.0.0.1";
+    }
+
+    // Return as is for regular IPv4
+    return ip;
+  }
+  /**
    * Record a click event with detailed analytics
    * @param {Object} clickData - Click event data
    * @param {string} clickData.urlId - URL document ID
@@ -24,7 +45,7 @@ class AnalyticsService {
     try {
       const {
         urlId,
-        ipAddress,
+        ipAddress: rawIpAddress,
         userAgent = null,
         referrer = null,
         userId = null,
@@ -32,8 +53,10 @@ class AnalyticsService {
         sessionId = null,
       } = clickData;
 
+      const ipAddress = this._normalizeIpAddress(rawIpAddress);
+
       // Find the URL document
-      const url = await URL_MODEL.findById(urlId); // Исправлено: было URL
+      const url = await URL_MODEL.findById(urlId);
       if (!url || !url.isActive) {
         throw new Error("URL not found or inactive");
       }
@@ -45,6 +68,7 @@ class AnalyticsService {
 
       // Determine if this is a unique click
       const isUnique = await Click.isUniqueClick(urlId, ipAddress);
+      console.log(ipAddress);
 
       // Create click record
       const click = new Click({
@@ -108,7 +132,7 @@ class AnalyticsService {
       } = options;
 
       // Verify URL exists
-      const url = await URL_MODEL.findById(urlId); // Исправлено: было URL
+      const url = await URL_MODEL.findById(urlId);
       if (!url) {
         throw new Error("URL not found");
       }
@@ -276,7 +300,7 @@ class AnalyticsService {
       ]);
 
       // Get top performing URLs
-      const topUrls = await URL_MODEL.find({ userId }) // Исправлено: было URL
+      const topUrls = await URL_MODEL.find({ userId })
         .sort({ clickCount: -1, uniqueClicks: -1 })
         .limit(limit)
         .select("originalUrl shortUrl title clickCount uniqueClicks createdAt")
@@ -329,7 +353,7 @@ class AnalyticsService {
       const userStats = await User.getAnalyticsSummary();
 
       // Get URL analytics
-      const urlStats = await URL_MODEL.getAnalyticsSummary(); // Исправлено: было URL
+      const urlStats = await URL_MODEL.getAnalyticsSummary();
 
       // Get platform growth metrics
       const growthMetrics = await this._calculateGrowthMetrics(
@@ -800,7 +824,7 @@ class AnalyticsService {
    */
   async _getRecentActivity(userId, limit = 10) {
     try {
-      const userUrls = await URL_MODEL.find({ userId }).select("_id"); // Исправлено: было URL
+      const userUrls = await URL_MODEL.find({ userId }).select("_id");
       const urlIds = userUrls.map((url) => url._id);
 
       if (urlIds.length === 0) return [];
