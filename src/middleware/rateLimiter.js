@@ -48,7 +48,7 @@ export const redirectLimiter = rateLimit({
 // Analytics rate limiting
 export const analyticsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // 50 analytics requests per windowMs
+  max: 500, // 50 analytics requests per windowMs
   message: ApiResponse.error(
     "Too many analytics requests, please try again after 15 minutes",
     null,
