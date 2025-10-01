@@ -556,6 +556,16 @@ clickSchema.statics.getUrlAnalytics = async function (urlId, options = {}) {
               $group: {
                 _id: { $hour: "$clickedAt" },
                 count: { $sum: 1 },
+                uniqueUsers: { $addToSet: "$userId" },
+                uniqueIPs: { $addToSet: "$ipAddress" },
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+                count: 1,
+                uniqueUsersCount: { $size: "$uniqueUsers" },
+                uniqueIPsCount: { $size: "$uniqueIPs" },
               },
             },
             {
@@ -572,6 +582,39 @@ clickSchema.statics.getUrlAnalytics = async function (urlId, options = {}) {
                   day: { $dayOfMonth: "$clickedAt" },
                 },
                 count: { $sum: 1 },
+                uniqueVisitors: {
+                  $addToSet: {
+                    $cond: [
+                      { $ne: ["$userId", null] },
+                      "$userId",
+                      "$ipAddress",
+                    ],
+                  },
+                },
+                uniqueRegisteredUsers: {
+                  $addToSet: {
+                    $cond: [{ $ne: ["$userId", null] }, "$userId", "$$REMOVE"],
+                  },
+                },
+                uniqueCountries: { $addToSet: "$location.country" },
+                botClicks: {
+                  $sum: { $cond: [{ $eq: ["$isBot", true] }, 1, 0] },
+                },
+                uniqueDeviceTypes: { $addToSet: "$device.type" },
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+                count: 1,
+                uniqueVisitorsCount: { $size: "$uniqueVisitors" },
+                uniqueRegisteredUsersCount: {
+                  $size: { $ifNull: ["$uniqueRegisteredUsers", []] },
+                },
+                uniqueCountriesCount: { $size: "$uniqueCountries" },
+                uniqueDeviceTypesCount: { $size: "$uniqueDeviceTypes" },
+                botClicks: 1,
+                humanClicks: { $subtract: ["$count", "$botClicks"] },
               },
             },
             {

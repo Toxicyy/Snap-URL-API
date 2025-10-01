@@ -38,6 +38,7 @@ app.use(
 app.use(morgan(config.nodeEnv === "development" ? "dev" : "combined"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.set('trust proxy', 1);
 
 // Rate limiting
 if (process.env.NODE_ENV !== "test") {

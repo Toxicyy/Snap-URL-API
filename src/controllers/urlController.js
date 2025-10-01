@@ -34,6 +34,7 @@ export const createUrl = async (req, res, next) => {
       description,
       generateQR = true,
       fetchMetadata = true,
+      tags,
       expiresIn,
     } = req.body;
 
@@ -46,6 +47,7 @@ export const createUrl = async (req, res, next) => {
         title,
         description,
         userId,
+        tags
       },
       {
         generateQR,
@@ -205,7 +207,7 @@ export const generateQRCode = async (req, res, next) => {
     } = req.body;
 
     const options = {
-      userId, // Добавляем userId в options
+      userId,
       size: parseInt(size),
       format,
       errorCorrectionLevel,
@@ -304,9 +306,10 @@ export const getPopularUrls = async (req, res, next) => {
 };
 
 /**
- * Bulk create URLs
- * @route POST /api/urls/bulk
- * @access Private
+ * Bulk create URLs endpoint
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
  */
 export const bulkCreateUrls = async (req, res, next) => {
   try {
@@ -346,16 +349,38 @@ export const bulkCreateUrls = async (req, res, next) => {
       generateQR,
       fetchMetadata,
       skipDuplicates,
+      stopOnError: false,
     };
 
     const result = await urlService.bulkCreateUrls(urls, userId, options);
 
+    // Adapt service result to expected frontend format
+    const adaptedResult = {
+      created: result.successful || [],
+      skipped: result.skipped || [],
+      errors: result.failed || [],
+      
+      summary: {
+        total: result.totalProcessed || 0,
+        created: result.successCount || 0,
+        skipped: result.skippedCount || 0,
+        errors: result.errorCount || 0,
+      },
+      
+      results: [
+        ...(result.successful || []).map(item => ({ ...item, status: 'created' })),
+        ...(result.skipped || []).map(item => ({ ...item, status: 'skipped' })),
+        ...(result.failed || []).map(item => ({ ...item, status: 'error' }))
+      ]
+    };
+
     res.status(200).json(
-      ApiResponse.success("Bulk URL creation completed", result.results, {
-        summary: result.summary,
+      ApiResponse.success("Bulk URL creation completed", adaptedResult, {
+        summary: adaptedResult.summary,
       })
     );
   } catch (error) {
+    console.error("Bulk create error:", error);
     next(error);
   }
 };

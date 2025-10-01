@@ -241,8 +241,7 @@ const urlSchema = new mongoose.Schema(
     // Advanced features
     tags: [
       {
-        type: String,
-        trim: true,
+        type: Array,
         maxLength: [30, "Tag cannot exceed 30 characters"],
       },
     ],

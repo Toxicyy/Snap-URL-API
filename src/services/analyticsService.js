@@ -9,26 +9,104 @@ import User from "../models/User.js";
 
 class AnalyticsService {
   /**
-   * Normalize IP address to IPv4 format
-   * @param {string} ip - Raw IP address
-   * @returns {string} Normalized IPv4 address
+   * Comprehensive IP address normalization and validation
+   * @param {string} ip - Raw IP address from various sources
+   * @param {Object} headers - Request headers for additional IP extraction
+   * @returns {string} Normalized and validated IPv4 address
    */
-  _normalizeIpAddress(ip) {
-    if (!ip) return "127.0.0.1";
+  _normalizeIpAddress(ip, headers = {}) {
+    // Helper function to validate IPv4
+    const isValidIPv4 = (ip) => {
+      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      if (!ipv4Regex.test(ip)) return false;
 
-    // Handle IPv4-mapped IPv6 addresses (::ffff:127.0.0.1 -> 127.0.0.1)
-    if (ip.startsWith("::ffff:")) {
-      return ip.substring(7);
+      const parts = ip.split(".");
+      return parts.every((part) => {
+        const num = parseInt(part, 10);
+        return num >= 0 && num <= 255;
+      });
+    };
+
+    // Helper function to extract IP from X-Forwarded-For header
+    const extractFromForwardedFor = (forwardedFor) => {
+      if (!forwardedFor) return null;
+
+      // Split by comma and get the first (original client) IP
+      const ips = forwardedFor.split(",").map((ip) => ip.trim());
+
+      // Find first public IP (not private/local)
+      for (const candidateIp of ips) {
+        if (this._isPublicIP(candidateIp)) {
+          return candidateIp;
+        }
+      }
+
+      // If no public IP found, return the first one
+      return ips[0] || null;
+    };
+
+    // Try multiple sources in order of preference
+    const ipSources = [
+      ip, // Direct IP parameter
+      headers["cf-connecting-ip"], // Cloudflare
+      headers["x-real-ip"], // Nginx proxy
+      extractFromForwardedFor(headers["x-forwarded-for"]), // Load balancers
+      headers["x-client-ip"], // Apache
+      headers["x-forwarded"], // Other proxies
+      headers["forwarded-for"],
+      headers["forwarded"],
+    ].filter(Boolean);
+
+    for (const candidateIp of ipSources) {
+      let normalizedIp = candidateIp;
+
+      // Handle IPv4-mapped IPv6 addresses (::ffff:127.0.0.1 -> 127.0.0.1)
+      if (normalizedIp.startsWith("::ffff:")) {
+        normalizedIp = normalizedIp.substring(7);
+      }
+
+      // Handle IPv6 loopback (::1 -> 127.0.0.1)
+      if (normalizedIp === "::1") {
+        normalizedIp = "127.0.0.1";
+      }
+
+      // Handle localhost variations
+      if (normalizedIp === "localhost") {
+        normalizedIp = "127.0.0.1";
+      }
+
+      // Validate and return if it's a valid IPv4
+      if (isValidIPv4(normalizedIp)) {
+        return normalizedIp;
+      }
     }
 
-    // Handle IPv6 loopback (::1 -> 127.0.0.1)
-    if (ip === "::1") {
-      return "127.0.0.1";
-    }
-
-    // Return as is for regular IPv4
-    return ip;
+    // Fallback for development/testing
+    return "127.0.0.1";
   }
+
+  /**
+   * Check if IP address is public (not private/local)
+   * @param {string} ip - IP address to check
+   * @returns {boolean} True if public IP
+   */
+  _isPublicIP(ip) {
+    if (!ip) return false;
+
+    // Private IP ranges (RFC 1918)
+    const privateRanges = [
+      /^10\./, // 10.0.0.0/8
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
+      /^192\.168\./, // 192.168.0.0/16
+      /^127\./, // Loopback
+      /^169\.254\./, // Link-local
+      /^224\./, // Multicast
+      /^0\./, // Invalid
+    ];
+
+    return !privateRanges.some((range) => range.test(ip));
+  }
+
   /**
    * Record a click event with detailed analytics
    * @param {Object} clickData - Click event data
@@ -46,6 +124,7 @@ class AnalyticsService {
       const {
         urlId,
         ipAddress: rawIpAddress,
+        headers = {}, // Add headers parameter
         userAgent = null,
         referrer = null,
         userId = null,
@@ -53,7 +132,8 @@ class AnalyticsService {
         sessionId = null,
       } = clickData;
 
-      const ipAddress = this._normalizeIpAddress(rawIpAddress);
+      // Use enhanced IP normalization
+      const ipAddress = this._normalizeIpAddress(rawIpAddress, headers);
 
       // Find the URL document
       const url = await URL_MODEL.findById(urlId);
@@ -68,7 +148,6 @@ class AnalyticsService {
 
       // Determine if this is a unique click
       const isUnique = await Click.isUniqueClick(urlId, ipAddress);
-      console.log(ipAddress);
 
       // Create click record
       const click = new Click({
@@ -80,6 +159,15 @@ class AnalyticsService {
         isUnique,
         sessionId,
         customData,
+        // Add IP metadata for debugging
+        ipMetadata:
+          process.env.NODE_ENV === "development"
+            ? {
+                raw: rawIpAddress,
+                isPublic: this._isPublicIP(ipAddress),
+                source: this._getIPSource(rawIpAddress, headers),
+              }
+            : undefined,
       });
 
       // Extract campaign data from referrer if present
@@ -113,6 +201,67 @@ class AnalyticsService {
     } catch (error) {
       throw new Error(`Click recording failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Helper method to identify IP source for debugging
+   * @param {string} rawIp - Original IP
+   * @param {Object} headers - Request headers
+   * @returns {string} IP source identifier
+   */
+  _getIPSource(rawIp, headers) {
+    if (headers["cf-connecting-ip"]) return "cloudflare";
+    if (headers["x-real-ip"]) return "nginx";
+    if (headers["x-forwarded-for"]) return "load-balancer";
+    if (headers["x-client-ip"]) return "apache";
+    if (rawIp) return "direct";
+    return "unknown";
+  }
+
+  /**
+   * Development helper: Test IP normalization
+   * @param {Object} testData - Test scenarios
+   * @returns {Object} Test results
+   */
+  _testIPNormalization(testData = {}) {
+    if (process.env.NODE_ENV !== "development") {
+      return { error: "Only available in development mode" };
+    }
+
+    const testCases = {
+      ipv6Mapped: "::ffff:192.168.1.1",
+      ipv6Loopback: "::1",
+      localhost: "localhost",
+      privateIP: "192.168.1.100",
+      publicIP: "8.8.8.8",
+      cloudflare: { headers: { "cf-connecting-ip": "203.0.113.1" } },
+      forwardedFor: {
+        headers: { "x-forwarded-for": "203.0.113.1, 192.168.1.1, 127.0.0.1" },
+      },
+      ...testData,
+    };
+
+    const results = {};
+
+    Object.entries(testCases).forEach(([testName, data]) => {
+      if (typeof data === "string") {
+        results[testName] = {
+          input: data,
+          output: this._normalizeIpAddress(data),
+          isPublic: this._isPublicIP(this._normalizeIpAddress(data)),
+        };
+      } else {
+        results[testName] = {
+          input: data,
+          output: this._normalizeIpAddress(null, data.headers),
+          isPublic: this._isPublicIP(
+            this._normalizeIpAddress(null, data.headers)
+          ),
+        };
+      }
+    });
+
+    return results;
   }
 
   /**
@@ -303,7 +452,9 @@ class AnalyticsService {
       const topUrls = await URL_MODEL.find({ userId })
         .sort({ clickCount: -1, uniqueClicks: -1 })
         .limit(limit)
-        .select("originalUrl shortUrl title clickCount uniqueClicks createdAt")
+        .select(
+          "originalUrl shortUrl title clickCount uniqueClicks createdAt shortCode"
+        )
         .lean();
 
       // Get recent activity

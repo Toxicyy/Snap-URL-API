@@ -74,6 +74,10 @@ export const schemas = {
     description: Joi.string().max(500).optional().messages({
       "string.max": "Description cannot exceed 500 characters",
     }),
+    tags: Joi.array().items(Joi.string().max(30)).optional().messages({
+      "string.max": "Tag cannot exceed 30 characters",
+    }),
+    isActive: Joi.boolean().optional(),
     generateQR: Joi.boolean().optional(),
     fetchMetadata: Joi.boolean().optional(),
     expiresIn: Joi.number().positive().max(365).optional().messages({

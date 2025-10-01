@@ -4,7 +4,10 @@ import {
   generateShortCode,
   validateShortCode,
 } from "../utils/shortCodeGenerator.js";
-import { generateQRCode as generateQRCodeUtil, validateUrlForQR } from "../utils/qrGenerator.js";
+import {
+  generateQRCode as generateQRCodeUtil,
+  validateUrlForQR,
+} from "../utils/qrGenerator.js";
 import { config } from "../config/config.js";
 // Import Node.js URL explicitly
 import { URL as NodeURL } from "url";
@@ -35,6 +38,7 @@ class UrlService {
         title,
         description,
         userId,
+        tags,
         generateQR = true,
         fetchMetadata = true,
         expiresIn = null, // days
@@ -52,6 +56,20 @@ class UrlService {
         throw new Error(
           `URL too long. Maximum length is ${config.maxUrlLength} characters`
         );
+      }
+
+      // Check URL limit for authenticated users
+      if (userId) {
+        const userUrlCount = await URL_MODEL.countDocuments({
+          userId,
+          isActive: true,
+        });
+
+        if (userUrlCount >= 20) {
+          throw new Error(
+            "URL limit reached. You can create up to 20 shortened URLs. Please delete some existing URLs to create new ones, or contact support for a premium account with higher limits."
+          );
+        }
       }
 
       // Check for existing URL by the same user to prevent duplicates
@@ -116,12 +134,16 @@ class UrlService {
       const urlDoc = new URL_MODEL({
         originalUrl,
         shortCode: finalShortCode,
-        customAlias: customAlias || null,
         title: title?.trim() || null,
         description: description?.trim() || null,
+        tags: tags?.map((tag) => tag.trim()) || [],
         userId: userId || null,
         expiresAt,
       });
+
+      if (customAlias && customAlias.trim()) {
+        urlDoc.customAlias = customAlias.trim();
+      }
 
       // Save URL
       await urlDoc.save();
@@ -552,12 +574,16 @@ class UrlService {
   }
 
   /**
-   * Bulk create URLs
-   * @param {Array} urlsData - Array of URL data objects
-   * @param {string} userId - User ID
+   * Bulk create URLs with duplicate detection and error handling
+   * @param {Array} urlsData - Array of URL data objects containing originalUrl, title, description
+   * @param {string} userId - User ID for ownership
    * @param {Object} options - Bulk creation options
-   * @returns {Promise<Object>} Bulk creation results
-   * @throws {Error} If bulk creation fails
+   * @param {boolean} options.generateQR - Whether to generate QR codes
+   * @param {boolean} options.fetchMetadata - Whether to fetch URL metadata
+   * @param {boolean} options.skipDuplicates - Whether to skip duplicate URLs
+   * @param {boolean} options.stopOnError - Whether to stop processing on first error
+   * @returns {Promise<Object>} Bulk creation results with successful, failed, and skipped arrays
+   * @throws {Error} If bulk creation fails or validation errors occur
    */
   async bulkCreateUrls(urlsData, userId, options = {}) {
     try {
@@ -572,15 +598,18 @@ class UrlService {
       const {
         generateQR = false,
         fetchMetadata = false,
+        skipDuplicates = true,
         stopOnError = false,
       } = options;
 
       const results = {
         successful: [],
         failed: [],
+        skipped: [],
         totalProcessed: 0,
         successCount: 0,
         errorCount: 0,
+        skippedCount: 0,
       };
 
       for (let i = 0; i < urlsData.length; i++) {
@@ -588,12 +617,33 @@ class UrlService {
         results.totalProcessed++;
 
         try {
-          // Add user ID to each URL
+          if (skipDuplicates) {
+            const existingUrl = await URL_MODEL.findOne({
+              originalUrl: urlData.originalUrl,
+              userId: userId,
+            });
+
+            if (existingUrl) {
+              results.skipped.push({
+                index: i,
+                originalUrl: urlData.originalUrl,
+                shortUrl: existingUrl.shortUrl,
+                shortCode: existingUrl.shortCode,
+                title: existingUrl.title,
+                description: existingUrl.description,
+                reason: "duplicate",
+                message: "URL already exists",
+              });
+              results.skippedCount++;
+              continue;
+            }
+          }
+
+          // Prepare URL data with user ID
           const urlWithUser = {
             ...urlData,
             userId,
           };
-
           const result = await this.createUrl(urlWithUser, {
             generateQR,
             fetchMetadata,
@@ -604,12 +654,16 @@ class UrlService {
             originalUrl: urlData.originalUrl,
             shortUrl: result.url.shortUrl,
             shortCode: result.url.shortCode,
+            title: result.url.title,
+            description: result.url.description,
             isNew: result.isNew,
             message: result.message || "URL created successfully",
           });
 
           results.successCount++;
         } catch (error) {
+          console.error(`Error creating URL ${i + 1}:`, error.message);
+
           results.failed.push({
             index: i,
             originalUrl: urlData.originalUrl,
@@ -618,14 +672,14 @@ class UrlService {
 
           results.errorCount++;
 
-          // Stop processing if stopOnError is true
+          // Stop processing if stopOnError is enabled
           if (stopOnError) {
             break;
           }
         }
       }
 
-      // Update user statistics
+      // Update user URL count for successfully created URLs
       if (results.successCount > 0) {
         await User.findByIdAndUpdate(userId, {
           $inc: { urlCount: results.successCount },
@@ -634,6 +688,7 @@ class UrlService {
 
       return results;
     } catch (error) {
+      console.error("Bulk URL creation failed:", error);
       throw new Error(`Bulk URL creation failed: ${error.message}`);
     }
   }

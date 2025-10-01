@@ -178,6 +178,11 @@ class AuthService {
         throw new Error("New password must be at least 6 characters long");
       }
 
+      // Check if new password is the same as the current password
+      if (newPassword === currentPassword) {
+        throw new Error("New password cannot be the same as the current password");
+      }
+
       // Update password (will be hashed by pre-save middleware)
       user.password = newPassword;
       await user.save();
