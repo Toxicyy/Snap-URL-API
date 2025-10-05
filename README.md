@@ -62,20 +62,6 @@ cp .env.example .env
 npm run dev
 ```
 
-### Docker Deployment
-
-```bash
-# Build image
-docker build -t snapurl-api .
-
-# Run container
-docker run -p 3000:3000 \
-  -e NODE_ENV=production \
-  -e MONGODB_URI=your_mongo_uri \
-  -e JWT_SECRET=your_jwt_secret \
-  snapurl-api
-```
-
 ### Environment Variables
 
 ```env
@@ -143,10 +129,6 @@ src/
 3. Write tests for new functionality
 4. Ensure all tests pass
 5. Submit a pull request
-
-### License
-
-This project is licensed under the MIT License.
 
 ### Health Check
 
